@@ -38,7 +38,7 @@
 
 //Project includes
 #include <stdio.h>
-#include "../src/MPU6050.h"
+#include "../src/MPU9250.h"
 #include "../eMPL/inv_mpu.h"
 #include "../eMPL/inv_mpu_dmp_motion_driver.h"
 #include <math.h>
@@ -53,6 +53,7 @@ Connections:
 volatile char dataReady = 0;
 short gyro[3];
 short accel[3];
+short compass[3];
 long quat[4];
 unsigned long timeStamp;
 signed char gyroMatrix[9] = {0, 1, 0,
@@ -103,10 +104,10 @@ void main(void) {
     } else {
         printf("mpu initialized\r\n");
     }
-    mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL);
+    mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL | INV_XYZ_COMPASS);
     long gyroBias[3];
     long accelBias[3];
-    error = mpu_run_self_test(gyroBias, accelBias);
+    error = mpu_run_6500_self_test(gyroBias, accelBias, 0);
     printf("Self test:\r\n");
     printf("   Gyro:");
     if (error & 1) {
@@ -137,24 +138,25 @@ void main(void) {
         gyroBias[i] = (long) (gyroBias[i] >> 16);
     }
     mpu_set_gyro_bias_reg(gyroBias);
-    mpu_set_accel_bias_6050_reg(accelBias);
+    mpu_set_accel_bias_6500_reg(accelBias);
     mpu_configure_fifo(INV_XYZ_GYRO | INV_XYZ_ACCEL);
+    mpu_set_compass_sample_rate(4);
     mpu_set_sample_rate(4);
-    do {
-        error = dmp_load_motion_driver_firmware();
-        if (error) {
-            printf("Error loading motion driver\r\n");
-        } else {
-            printf("Motion driver loaded\r\n");
-        }
-    } while (error);
-    __delay_ms(1000);
-    dmp_set_orientation(inv_orientation_matrix_to_scalar(gyroMatrix));
-    dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT | DMP_FEATURE_SEND_RAW_ACCEL
-            | DMP_FEATURE_SEND_CAL_GYRO | DMP_FEATURE_GYRO_CAL | DMP_FEATURE_TAP);
-    dmp_set_interrupt_mode(DMP_INT_CONTINUOUS);
-    dmp_set_fifo_rate(1);
-    mpu_set_dmp_state(1);
+//    do {
+//        error = dmp_load_motion_driver_firmware();
+//        if (error) {
+//            printf("Error loading motion driver\r\n");
+//        } else {
+//            printf("Motion driver loaded\r\n");
+//        }
+//    } while (error);
+//    __delay_ms(1000);
+//    dmp_set_orientation(inv_orientation_matrix_to_scalar(gyroMatrix));
+//    dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT | DMP_FEATURE_SEND_RAW_ACCEL
+//            | DMP_FEATURE_SEND_CAL_GYRO | DMP_FEATURE_GYRO_CAL | DMP_FEATURE_TAP);
+//    dmp_set_interrupt_mode(DMP_INT_CONTINUOUS);
+//    dmp_set_fifo_rate(1);
+//    mpu_set_dmp_state(1);
     //enable interrupts and turn on TMR2
     INTCONbits.PEIE = 1;
     INTCONbits.GIE = 1;
@@ -168,15 +170,17 @@ void main(void) {
             unsigned long timeStamp = 0;
             more = 0;
             do {
-                //mpu_read_fifo(gyro, accel, &timeStamp, &sensors, &more);
-                error = dmp_read_fifo(gyro, accel, quat, &timeStamp, &sensors, &more);
+                mpu_read_fifo(gyro, accel, &timeStamp, &sensors, &more);
+                mpu_get_compass_reg(compass, NULL);
+                //error = dmp_read_fifo(gyro, accel, quat, &timeStamp, &sensors, &more);
                 //printf("More = %u\r\n", more);
             } while (more > 0);
             //printf("Time = %lu Error %d\r\n", timeStamp, error);
             printf("Accel: %d %d %d\r\n", accel[0], accel[1], accel[2]);
             printf("Gyro: %d %d %d\r\n", gyro[0], gyro[1], gyro[2]);
-            //printf("Quat: %ld %ld %ld %ld\r\n\r\n", quat[0], quat[1], quat[2], quat[3]);
-            computeEulerAngles(quat);
+            printf("Compass: %d %d %d\r\n\r\n", compass[0], compass[1], compass[2]);
+//            //printf("Quat: %ld %ld %ld %ld\r\n\r\n", quat[0], quat[1], quat[2], quat[3]);
+//            computeEulerAngles(quat);
         }
     }
 }

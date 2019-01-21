@@ -1,5 +1,5 @@
 #include <xc.h>
-#include "MPU6050.h"
+#include "MPU9250.h"
 
 unsigned long tickCount;
 
@@ -90,11 +90,8 @@ int pic18_get_ms(unsigned long *count) {
 }
 
 void mpuReset(void) {
-    //Note this may only work with MPU6050
-    unsigned char reg = 0x80;
+    unsigned char reg;
+    reg = 0x80;
     pic18_i2c_write(0x68, 107, 1, &reg); //Reset
-    reg = 0;
-    do {
-        pic18_i2c_read(0x68, 107, 1, &reg);
-    } while (reg & 0x80);
+    __delay_ms(200);
 }

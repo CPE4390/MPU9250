@@ -24,86 +24,7 @@
 #include <math.h>
 #include "inv_mpu.h"
 
-/* The following functions must be defined for this platform:
- * i2c_write(unsigned char slave_addr, unsigned char reg_addr,
- *      unsigned char length, unsigned char const *data)
- * i2c_read(unsigned char slave_addr, unsigned char reg_addr,
- *      unsigned char length, unsigned char *data)
- * delay_ms(unsigned long num_ms)
- * get_ms(unsigned long *count)
- * reg_int_cb(void (*cb)(void), unsigned char port, unsigned char pin)
- * labs(long x)
- * fabsf(float x)
- * min(int a, int b)
- */
-#if defined MOTION_DRIVER_TARGET_MSP430
-#include "msp430.h"
-#include "msp430_i2c.h"
-#include "msp430_clock.h"
-#include "msp430_interrupt.h"
-#define i2c_write   msp430_i2c_write
-#define i2c_read    msp430_i2c_read
-#define delay_ms    msp430_delay_ms
-#define get_ms      msp430_get_clock_ms
-static inline int reg_int_cb(struct int_param_s *int_param)
-{
-    return msp430_reg_int_cb(int_param->cb, int_param->pin, int_param->lp_exit,
-        int_param->active_low);
-}
-#define log_i(...)     do {} while (0)
-#define log_e(...)     do {} while (0)
-/* labs is already defined by TI's toolchain. */
-/* fabs is for doubles. fabsf is for floats. */
-#define fabs        fabsf
-#define min(a,b) ((a<b)?a:b)
-#elif defined EMPL_TARGET_MSP430
-#include "msp430.h"
-#include "msp430_i2c.h"
-#include "msp430_clock.h"
-#include "msp430_interrupt.h"
-#include "log.h"
-#define i2c_write   msp430_i2c_write
-#define i2c_read    msp430_i2c_read
-#define delay_ms    msp430_delay_ms
-#define get_ms      msp430_get_clock_ms
-static inline int reg_int_cb(struct int_param_s *int_param)
-{
-    return msp430_reg_int_cb(int_param->cb, int_param->pin, int_param->lp_exit,
-        int_param->active_low);
-}
-#define log_i       MPL_LOGI
-#define log_e       MPL_LOGE
-/* labs is already defined by TI's toolchain. */
-/* fabs is for doubles. fabsf is for floats. */
-#define fabs        fabsf
-#define min(a,b) ((a<b)?a:b)
-#elif defined EMPL_TARGET_UC3L0
-/* Instead of using the standard TWI driver from the ASF library, we're using
- * a TWI driver that follows the slave address + register address convention.
- */
-#include "twi.h"
-#include "delay.h"
-#include "sysclk.h"
-#include "log.h"
-#include "sensors_xplained.h"
-#include "uc3l0_clock.h"
-#define i2c_write(a, b, c, d)   twi_write(a, b, d, c)
-#define i2c_read(a, b, c, d)    twi_read(a, b, d, c)
-/* delay_ms is a function already defined in ASF. */
-#define get_ms  uc3l0_get_clock_ms
-static inline int reg_int_cb(struct int_param_s *int_param)
-{
-    sensor_board_irq_connect(int_param->pin, int_param->cb, int_param->arg);
-    return 0;
-}
-#define log_i       MPL_LOGI
-#define log_e       MPL_LOGE
-/* UC3 is a 32-bit processor, so abs and labs are equivalent. */
-#define labs        abs
-#define fabs(x)     (((x)>0)?(x):-(x))
-#else
-#error  Gyro driver is missing the system layer implementations.
-#endif
+#include "../src/MPU9250.h"
 
 #if !defined MPU6050 && !defined MPU9150 && !defined MPU6500 && !defined MPU9250
 #error  Which gyro are you using? Define MPUxxxx in your compiler options.
@@ -701,7 +622,7 @@ int mpu_read_reg(unsigned char reg, unsigned char *data)
  *  @param[in]  int_param   Platform-specific parameters to interrupt API.
  *  @return     0 if successful.
  */
-int mpu_init(struct int_param_s *int_param)
+int mpu_init(void)
 {
     unsigned char data[6];
 
@@ -760,9 +681,6 @@ int mpu_init(struct int_param_s *int_param)
         return -1;
     if (mpu_configure_fifo(0))
         return -1;
-
-    if (int_param)
-        reg_int_cb(int_param);
 
 #ifdef AK89xx_SECONDARY
     setup_compass();
@@ -2201,7 +2119,6 @@ static int get_st_biases(long *gyro, long *accel, unsigned char hw_test)
     gyro[0] = (long)(((float)gyro[0]*65536.f) / test.gyro_sens / packet_count);
     gyro[1] = (long)(((float)gyro[1]*65536.f) / test.gyro_sens / packet_count);
     gyro[2] = (long)(((float)gyro[2]*65536.f) / test.gyro_sens / packet_count);
-    if (has_accel) {
         accel[0] = (long)(((float)accel[0]*65536.f) / test.accel_sens /
             packet_count);
         accel[1] = (long)(((float)accel[1]*65536.f) / test.accel_sens /
@@ -2209,8 +2126,10 @@ static int get_st_biases(long *gyro, long *accel, unsigned char hw_test)
         accel[2] = (long)(((float)accel[2]*65536.f) / test.accel_sens /
             packet_count);
         /* Don't remove gravity! */
-        accel[2] -= 65536L;
-    }
+        if (accel[2] > 0L)
+            accel[2] -= 65536L;
+        else
+            accel[2] += 65536L;
 #else
     gyro[0] = (long)(((long long)gyro[0]<<16) / test.gyro_sens / packet_count);
     gyro[1] = (long)(((long long)gyro[1]<<16) / test.gyro_sens / packet_count);
@@ -2453,7 +2372,7 @@ static int gyro_6500_self_test(long *bias_regular, long *bias_st, int debug)
 
 static int get_st_6500_biases(long *gyro, long *accel, unsigned char hw_test, int debug)
 {
-    unsigned char data[HWST_MAX_PACKET_LENGTH];
+    static unsigned char data[HWST_MAX_PACKET_LENGTH];
     unsigned char packet_count, ii;
     unsigned short fifo_count;
     int s = 0, read_size = 0, ind;

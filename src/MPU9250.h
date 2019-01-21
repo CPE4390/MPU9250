@@ -5,8 +5,8 @@
  * Created on January 15, 2019, 10:53 AM
  */
 
-#ifndef MPU6050_H
-#define	MPU6050_H
+#ifndef MPU9250_H
+#define	MPU9250_H
 
 #include <xc.h>
 
@@ -30,7 +30,7 @@ extern "C" {
     void mpuReset(void);
     
     //DMP library defines
-    #define MPU6050
+    #define MPU9250
     #define EMPL_NO_64BIT
     #define i2c_write   pic18_i2c_write
     #define i2c_read    pic18_i2c_read
@@ -44,5 +44,5 @@ extern "C" {
 }
 #endif
 
-#endif	/* MPU6050_H */
+#endif	/* MPU9250_H */
 
